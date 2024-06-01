@@ -126,6 +126,8 @@ function New-AzdoArmOidcServiceEndpoint {
         [string]$serviceConnectionName
     )
 
+    Write-Information "Creating service connection $serviceConnectionName to SPN $spnClientId" 
+
     $Connection = Get-AzdoConnection
 
     $body = [PSCustomObject]@{

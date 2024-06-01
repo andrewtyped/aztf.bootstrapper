@@ -17,6 +17,8 @@ function New-AzAppRegistration {
         [string]$DisplayName
     )
 
+    Write-Information "Creating App Registration named $DisplayName..."
+
     $appId = & az ad app create --display-name $DisplayName --query id --output tsv
 
     if (0 -ne $LASTEXITCODE) {
@@ -57,6 +59,8 @@ function New-ResourceGroup {
         [string]$Name,
         [string]$Location = (Get-DefaultLocation)
     )
+
+    Write-Information "Creating Resource Group named $Name in $Location..."
 
     & az group create --name $Name --location $Location
 }
@@ -163,6 +167,8 @@ function New-TfStorageAccount {
        [Parameter()]
        [string]$Location = (Get-DefaultLocation)
     )
+
+    Write-Information "Creating storage account with name $Name" 
  
     $checkNameResult = & az storage account check-name --name $Name --query nameAvailable --output tsv
  
@@ -239,6 +245,8 @@ function Grant-SPAccessToContainer {
         [string]$ContainerName
     )
 
+    Write-Information "Granting storage blob access to $StorageAccountName/$ContainerName for SPN $SPObjectId" 
+
     az role assignment create `
       --role 'Storage Blob Data Contributor' `
       --assignee-object-id $SPObjectId `
@@ -264,6 +272,8 @@ function Grant-SPAccessToResourceGroup {
         [string]$ResourceGroupName
     )
 
+    Write-Information "Granting resource group access to $ResourceGroupName for SPN $SPObjectId" 
+
     az role assignment create `
       --role 'Contributor' `
       --assignee-object-id $SPObjectId `
@@ -286,6 +296,8 @@ function New-AzdoArmOidcServicePrincipalFederatedCredential {
         [string]$issuer,
         [string]$audience
     )
+
+    Write-Information "Creating Federated secret on $spnClientId" 
 
     $FederatedCredentialParameters = [PSCustomObject]@{
         Name = $serviceConnectionName

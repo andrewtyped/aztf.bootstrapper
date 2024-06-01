@@ -66,7 +66,7 @@ $Valid = $true
 
 foreach($argKey in $ConnectAzdoRestApiArgs.Keys) {
     if ([string]::IsNullOrWhiteSpace(($ConnectAzdoRestApiArgs[$argKey]))) {
-        Write-Host "Required environment variable $argKey is missing or has an empty value."
+        Write-Host "Required environment variable for $argKey is missing or has an empty value."
         $Valid = $false
     }
 }
