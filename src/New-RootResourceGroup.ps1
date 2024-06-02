@@ -93,12 +93,12 @@ try
 {
     $StorageAccountResult = New-TfStorageAccountTest -SubscriptionId $ENV:AZ_SUBSCRIPTION_ID -GroupName $GroupName
 
-    Write-Information "ClientId is $($Result.AppReg.ClientId)"
-    Write-Information "AppDisplayName is $($Result.AppReg.AppDisplayName)"
+    Write-Information "ClientId is $($StorageAccountResult.AppReg.ClientId)"
+    Write-Information "AppDisplayName is $($StorageAccountResult.AppReg.AppDisplayName)"
 
     #TODO: SOmething is wrong with the REST API call, we are getting an exception at the very end.
     # We are getting 401. PAT isn't working, something up with header encoding... lame. tryu again later.
-    $ServiceEndpointResult = New-AzdoArmServiceEndpointWithFederatedCredential -spnClientId $Result.AppReg.ClientId -serviceConnectionName $Result.AppReg.AppDisplayName
+    $ServiceEndpointResult = New-AzdoArmServiceEndpointWithFederatedCredential -spnClientId $StorageAccountResult.AppReg.ClientId -serviceConnectionName $StorageAccountResult.AppReg.AppDisplayName
 
     return [PSCustomObject]@{
         StorageAccountResult = $StorageAccountResult
