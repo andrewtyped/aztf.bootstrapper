@@ -10,16 +10,18 @@ function New-TfStorageAccountTest {
     param(
         [string]$SubscriptionId
     )
-    $GroupName = 'rg-root-1'
-    $AppReg = New-AzAppRegistration -DisplayName "$GroupName-deployer"
-    $RG = New-ResourceGroup -Name $GroupName
+    $GroupName = 'rg-root-9'
+    $AppReg = New-AzAppRegistration -DisplayName "$GroupName-deployer9"
+    $ResourceGroup = New-ResourceGroup -Name $GroupName
     $StorageAcccountName = "sa$($GroupName -replace '-','')tf"
-    $Account = New-TfStorageAccount -Name $StorageAcccountName -ResourceGroupName $GroupName
-    Grant-SPAccessToContainer -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName  -StorageAccountName $StorageAcccountName -ContainerName $Account.Container.Name
-    Grant-SPAccessToResourceGroup -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName
+    $Account = New-TfStorageAccount -Name $StorageAcccountName -ResourceGroupName $GroupName -SubscriptionId $SubscriptionId
+    $null = Grant-SPAccessToContainer -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName  -StorageAccountName $StorageAcccountName -ContainerName $Account.Container
+    $null = Grant-SPAccessToResourceGroup -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName
 
     [PSCustomObject]@{
         AppReg = $AppReg
+        ResourceGroup = $ResourceGroup
+        StorageAccount = $Account
     }
 }
 
@@ -31,7 +33,9 @@ Terraform deployments of new resource groups in a subscription.
 function New-AzdoArmServiceEndpointWithFederatedCredential {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
         [string]$spnClientId,
+        [Parameter(Mandatory)]
         [string]$serviceConnectionName
     )
 
@@ -43,13 +47,16 @@ function New-AzdoArmServiceEndpointWithFederatedCredential {
         Issuer = $ServiceEndpoint.AdAppFederatedCredential.Issuer
         Audience = $ServiceEndpoint.AdAppFederatedCredential.Audience
     }
-    New-AzdoArmOidcServicePrincipalFederatedCredential @FederatedCredentialArgs
+    $FederatedCredentialResponse = New-AzdoArmOidcServicePrincipalFederatedCredential @FederatedCredentialArgs
+
+    return [PSCustomObject]@{
+        AzureDevOpsResponse = $ServiceEndpoint
+        AzureSpnFederatedCredentialResponse = $FederatedCredentialResponse
+    }
 }
 
-
-Import-Module -Name "$PSScriptRoot/azdo.bootstrapper.psm1"
-Import-Module -Name "$PSScriptRoot/aztf.bootstrapper.psm1"
-
+Import-Module -Name "$PSScriptRoot/azdo.bootstrapper.psm1" -Force
+Import-Module -Name "$PSScriptRoot/aztf.bootstrapper.psm1" -Force
 
 $ConnectAzdoRestApiArgs = @{
     TenantId = $ENV:AZ_TENANT_ID
@@ -77,5 +84,26 @@ if (!$Valid) {
 
 Connect-AzdoRestApi @ConnectAzdoRestApiArgs
 
-$Result = New-TfStorageAccountTest -SubscriptionId $ENV:AZ_SUBSCRIPTION_ID
-New-AzdoArmServiceEndpointWithFederatedCredential -spnClientId $Result.AppReg.ClientId -serviceConnectionName $Result.AppReg.AppDisplayName
+try
+{
+    $StorageAccountResult = New-TfStorageAccountTest -SubscriptionId $ENV:AZ_SUBSCRIPTION_ID
+
+    Write-Information "ClientId is $($Result.AppReg.ClientId)"
+    Write-Information "AppDisplayName is $($Result.AppReg.AppDisplayName)"
+
+    #TODO: SOmething is wrong with the REST API call, we are getting an exception at the very end.
+    # We are getting 401. PAT isn't working, something up with header encoding... lame. tryu again later.
+    $ServiceEndpointResult = New-AzdoArmServiceEndpointWithFederatedCredential -spnClientId $Result.AppReg.ClientId -serviceConnectionName $Result.AppReg.AppDisplayName
+
+    return [PSCustomObject]@{
+        StorageAccountResult = $StorageAccountResult
+        ServiceEndpointResult = $ServiceEndpointResult
+    }
+} catch{
+    Write-Error $_
+
+    return [PSCustomObject]@{
+        StorageAccountResult = $StorageAccountResult
+        ServiceEndpointResult = $ServiceEndpointResult
+    }
+}

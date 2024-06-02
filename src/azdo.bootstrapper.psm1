@@ -110,8 +110,10 @@ function Invoke-AzdoRestApi {
     if ($Response.StatusCode -eq 200 -or $response.StatusCode -eq 201) {
         return $Response.Content | ConvertFrom-Json
     }
+
+    $global:Response = $Response
     
-    throw $Response
+    return $Response
 }
 
 
@@ -122,7 +124,9 @@ Create a new Azure DevOps ARM service connection using workload identity federat
 function New-AzdoArmOidcServiceEndpoint {
     [CmdletBinding()]
     param(
+        [Parameter(Mandatory)]
         [string]$spnClientId,
+        [Parameter(Mandatory)]
         [string]$serviceConnectionName
     )
 
@@ -170,7 +174,7 @@ function New-AzdoArmOidcServiceEndpoint {
         Method = 'POST'
     }
 
-    $null = Invoke-AzdoRestApi @Request -ErrorAction Stop 
+    $response = Invoke-AzdoRestApi @Request -ErrorAction Stop 
 
     [PSCustomObject]@{
         ServiceConnectionName = $serviceConnectionName
@@ -180,5 +184,6 @@ function New-AzdoArmOidcServiceEndpoint {
             Issuer = "https://vstoken.dev.azure.com/$($Connection.adoOrgId)"
             Audience = 'api://AzureADTokenExchange'
         }
+        ResponseRaw = $response
     }
 }

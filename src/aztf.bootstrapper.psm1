@@ -25,11 +25,18 @@ function New-AzAppRegistration {
         throw "Failed to create enterprise app '$DisplayName'."
     }
 
-    $spId = & az ad sp create --id $AppId --query '{id:id, appId:appId}' --output tsv
+    $spIdJson = & az ad sp create --id $AppId --query '{id:id, appId:appId}' --output json
 
     if (0 -ne $LASTEXITCODE) {
         throw "Failed to create service principal for enterprise app '$appId' with display name '$DisplayName'"
     }
+
+    $spId = $spIdJson | ConvertFrom-Json
+
+    Write-Information "AppId is $appId"
+    Write-Information "AppDisplayName is $DisplayName"
+    Write-Information "SpId is $($spId.Id)"
+    Write-Information "ClientId is $($spId.AppId)"
 
     [PSCustomObject]@{
         AppId = $appId
@@ -62,91 +69,13 @@ function New-ResourceGroup {
 
     Write-Information "Creating Resource Group named $Name in $Location..."
 
-    & az group create --name $Name --location $Location
-}
+    $null = & az group create --name $Name --location $Location
 
-<#
-.SYNOPSIS
-Create a new azure storage account. This one sets up vnet integration, which makes bootstrapping terraform difficult 
-because it would require us to already have a vnet and subnet provisioned... but we'd presumably like to manage that
-with terraform.
-#>
-function New-TfStorageAccountOld {
-   [CmdletBinding()]
-   param(
-      [Parameter(Mandatory)]
-      [string]$Name,
-
-      [Parameter(Mandatory)]
-      [string]$ResourceGroupName,
-
-      [Parameter(Mandatory)]
-      [string]$VnetName,
-
-      [Parameter(Mandatory)]
-      [string]$SubnetName,
-
-      [Parameter()]
-      [string]$Location = (Get-DefaultLocation)
-   )
-
-   $checkNameResult = & az storage account check-name --name $Name --query nameAvailable --output tsv
-
-   if ('false' -eq $checkNameResult) {
-      throw "Cannot create storage account '$Name' because it already exists."
-   }
-
-   # Default action is set to allow right now to accommodate access from MS hosted agents in Azure DevOps. 
-   # The only way to allow list those IPs is using their stupid weekly published file (~100 IP range entries per region) and manually ACL-ing each IP range. 
-   # Self-hosted agents are really the way to go.
-   $account = & az storage account create `
-     --name $Name `
-     --resource-group $ResourceGroupName `
-     --vnet-name $VnetName `
-     --location $Location `
-     --allow-blob-public-access 'false' `
-     --allow-shared-key-access 'false' `
-     --https-only 'true' `
-     --kind 'StorageV2' `
-     --subnet $SubnetName `
-     --default-action 'Allow' `
-     --min-tls-version 'TLS1_2' `
-     --public-network-access 'Enabled' `
-     --sku 'Standard_LRS'
-
-   if (0 -ne $LASTEXITCODE) {
-    throw "Failed to create storage account '$Name'."
-   }
-
-   # Commenting network ACL since we are granting access over the open internet
-   # $NetworkACL = az storage account network-rule add --resource-group $ResourceGroupName --account-name $Name --ip-address $MyIP
-
-   if (0 -ne $LASTEXITCODE) {
-    throw "Failed to configure network ACL to allow my IP for storage account '$Name'."
-   }
-
-   #NOTE: This command originally failed with error 'The request may be blocked by network rules of storage account. 
-   # I added the ACL above but was still getting it minutes after creating the ACL. Then I assigned Storage Blob Data Owner to myself and it worked. 
-   # Hard to say if coincidence or not.'
-
-   $container  = az storage container create `
-     --name 'tfstate-container' `
-     --auth-mode 'login' `
-     --fail-on-exist `
-     --public-access 'off' `
-     --account-name $Name
-
-    if (0 -ne $LASTEXITCODE) {
-        throw "Failed to create storage container 'tfstate-container' on account '$Name'."
-    }
-
-    [PSCustomObject]{
-        Account = ($account | ConvertFrom-Json)
-        AccountNetworkACL = $($NetworkACL | ConvertFrom-Json)
-        Container = ($container | ConvertFrom-Json)
+    [PSCustomObject]@{
+        Name = $Name
+        Location = $Location
     }
 }
-
 
 
 <#
@@ -160,12 +89,18 @@ function New-TfStorageAccount {
     param(
        [Parameter(Mandatory)]
        [string]$Name,
+
+       [Parameter(Mandatory)]
+       [string]$SubscriptionId,
  
        [Parameter(Mandatory)]
        [string]$ResourceGroupName,
  
        [Parameter()]
-       [string]$Location = (Get-DefaultLocation)
+       [string]$Location = (Get-DefaultLocation),
+
+       [Parameter()]
+       [string]$ContainerName = 'tfstate-container'
     )
 
     Write-Information "Creating storage account with name $Name" 
@@ -195,28 +130,66 @@ function New-TfStorageAccount {
     if (0 -ne $LASTEXITCODE) {
      throw "Failed to create storage account '$Name'."
     }
- 
-    #NOTE: This command originally failed with error 'The request may be blocked by network rules of storage account. 
-    # I added the ACL above but was still getting it minutes after creating the ACL. Then I assigned Storage Blob Data Owner to myself and it worked. 
-    # Hard to say if coincidence or not.'
- 
-    $container  = az storage container create `
-      --name 'tfstate-container' `
-      --auth-mode 'login' `
-      --fail-on-exist `
-      --public-access 'off' `
-      --account-name $Name
+
+    # Even a subscription owner can't provision storage account objects directly - Storage contributor/owner rights are necessary
+    $null = Grant-PersonalAccessToContainer -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -StorageAccountName $Name
+
+    # RBAC Grants take time to propagate. Use retry.
+    $MaxAttempts = 10
+    $SleepTimeSec = 15
+    $Attempt = 0
+
+    while ($Attempt -lt $MaxAttempts) {
+        Write-Information "Attempt $Attempt/$MaxAttempts to create storage container tfstate-container on account $Name..."
+        $null  = az storage container create `
+        --name $ContainerName `
+        --auth-mode 'login' `
+        --fail-on-exist `
+        --public-access 'off' `
+        --account-name $Name
+
+        if (0 -ne $LASTEXITCODE) {
+            Start-Sleep -Seconds $SleepTimeSec
+            $Attempt++
+        } else {
+            Write-Information "Success!"
+            break
+        }
+    }
  
      if (0 -ne $LASTEXITCODE) {
          throw "Failed to create storage container 'tfstate-container' on account '$Name'."
      }
  
-     [PSCustomObject]{
+     [PSCustomObject]@{
          Account = ($account | ConvertFrom-Json)
-         Container = ($container | ConvertFrom-Json)
+         Container = $ContainerName
      }
  }
 
+
+function Grant-PersonalAccessToContainer {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SubscriptionId,
+
+        [Parameter(Mandatory)]
+        [string]$ResourceGroupName,
+
+        [Parameter(Mandatory)]
+        [string]$StorageAccountName
+    )
+
+    $UserId = (az ad signed-in-user show --query id -o tsv)
+    Write-Information "Granting storage blob access to $StorageAccountName/$ContainerName for User $UserId" 
+
+    $null = az role assignment create `
+      --role 'Storage Blob Data Owner' `
+      --assignee-object-id $UserId `
+      --assignee-principal-type 'User' `
+      --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
+}
 
 <#
 .SYNOPSIS
@@ -247,7 +220,7 @@ function Grant-SPAccessToContainer {
 
     Write-Information "Granting storage blob access to $StorageAccountName/$ContainerName for SPN $SPObjectId" 
 
-    az role assignment create `
+    $null = az role assignment create `
       --role 'Storage Blob Data Contributor' `
       --assignee-object-id $SPObjectId `
       --assignee-principal-type 'ServicePrincipal' `
@@ -274,13 +247,12 @@ function Grant-SPAccessToResourceGroup {
 
     Write-Information "Granting resource group access to $ResourceGroupName for SPN $SPObjectId" 
 
-    az role assignment create `
+    $null = az role assignment create `
       --role 'Contributor' `
       --assignee-object-id $SPObjectId `
       --assignee-principal-type 'ServicePrincipal' `
       --scope "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName"
 }
-
 
 <#
 .SYNOPSIS
