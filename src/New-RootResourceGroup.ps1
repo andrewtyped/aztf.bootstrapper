@@ -1,5 +1,8 @@
 [CmdletBinding()]
-param()
+param(
+    [Parameter()]
+    [string]$GroupName = 'rg-root-1'
+)
 
 <#
 .SYNOPSIS
@@ -8,10 +11,12 @@ Creates a new resource group, storage account, container, and spn with access to
 function New-TfStorageAccountTest {
     [CmdletBinding()]
     param(
-        [string]$SubscriptionId
+        [Parameter(Mandatory)]
+        [string]$SubscriptionId,
+        [Parameter()]
+        [string]$GroupName = 'rg-root-1'
     )
-    $GroupName = 'rg-root-9'
-    $AppReg = New-AzAppRegistration -DisplayName "$GroupName-deployer9"
+    $AppReg = New-AzAppRegistration -DisplayName "$GroupName-deployer"
     $ResourceGroup = New-ResourceGroup -Name $GroupName
     $StorageAcccountName = "sa$($GroupName -replace '-','')tf"
     $Account = New-TfStorageAccount -Name $StorageAcccountName -ResourceGroupName $GroupName -SubscriptionId $SubscriptionId
@@ -86,7 +91,7 @@ Connect-AzdoRestApi @ConnectAzdoRestApiArgs
 
 try
 {
-    $StorageAccountResult = New-TfStorageAccountTest -SubscriptionId $ENV:AZ_SUBSCRIPTION_ID
+    $StorageAccountResult = New-TfStorageAccountTest -SubscriptionId $ENV:AZ_SUBSCRIPTION_ID -GroupName $GroupName
 
     Write-Information "ClientId is $($Result.AppReg.ClientId)"
     Write-Information "AppDisplayName is $($Result.AppReg.AppDisplayName)"
