@@ -22,6 +22,7 @@ function New-TfStorageAccountTest {
     $Account = New-TfStorageAccount -Name $StorageAcccountName -ResourceGroupName $GroupName -SubscriptionId $SubscriptionId
     $null = Grant-SPAccessToContainer -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName  -StorageAccountName $StorageAcccountName -ContainerName $Account.Container
     $null = Grant-SPAccessToResourceGroup -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid -ResourceGroupName $GroupName
+    $null = Grant-SPAccessToSubscription -SubscriptionId $SubscriptionId -SPObjectId $AppReg.Spid
 
     [PSCustomObject]@{
         AppReg = $AppReg

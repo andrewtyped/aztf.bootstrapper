@@ -256,6 +256,30 @@ function Grant-SPAccessToResourceGroup {
 
 <#
 .SYNOPSIS
+Assign Contributor rights to a subscription for a service principal, meaning the SPN can create or delete resources at the subscription level, such as resource groups. 
+For our purposes, this means the SPN can be used to provision new resource groups.
+#>
+function Grant-SPAccessToSubscription {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SPObjectId,
+
+        [Parameter(Mandatory)]
+        [string]$SubscriptionId
+    )
+
+    Write-Information "Granting subscription access to $ResourceGroupName for SPN $SPObjectId" 
+
+    $null = az role assignment create `
+      --role 'Contributor' `
+      --assignee-object-id $SPObjectId `
+      --assignee-principal-type 'ServicePrincipal' `
+      --scope "/subscriptions/$SubscriptionId"
+}
+
+<#
+.SYNOPSIS
 Create a federated credential on a service principal. This implementation is designed to create a federated credential compatible with Azure DevOps ARM service connections
 using workload identity federation.
 #>
